@@ -1,0 +1,49 @@
+FROM node:21-alpine3.19 AS deps
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+COPY pnpm*.yaml ./
+
+RUN npm i -g pnpm
+RUN pnpm i
+
+
+FROM node:21-alpine3.19 AS builder
+
+WORKDIR /usr/src/app
+
+COPY --from=deps /usr/src/app/node_modules ./node_modules
+
+COPY . .
+
+RUN npm i -g pnpm
+RUN pnpm run build
+
+#---------------
+# SI ES CON NPM
+#RUN npm ci -f --only=production && npm cache clean --force
+
+# Elimina los paquetes no utilizados en produccion
+RUN pnpm prune --prod
+#---------------
+
+RUN npx prisma generate
+
+
+FROM node:21-alpine3.19 AS prod
+
+WORKDIR /usr/src/app
+
+COPY --from=builder /usr/src/app/node_modules ./node_modules
+
+COPY --from=builder  /usr/src/app/dist ./dist
+
+ENV NODE_ENV=production
+
+# USUARIO POR SEGURIDAD
+USER node
+
+EXPOSE 3000
+
+CMD ["node", "dist/main.js"]
